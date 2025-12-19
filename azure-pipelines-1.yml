@@ -1,0 +1,142 @@
+trigger: none
+
+pool: pool-ilz
+
+stages:
+-  stage: PreCommit
+   displayName: Pre-Commit
+   jobs:
+     - job: TerraformValidate
+       displayName: TerraformValidate
+       steps:
+       - task: TerraformTask@5
+         inputs:
+           provider: 'azurerm'
+           command: 'init'
+           workingDirectory: '$(System.DefaultWorkingDirectory)/Environment/dev'
+           commandOptions: '-reconfigure'
+           backendServiceArm: 'saba-scn'
+           backendAzureRmStorageAccountName: 'todoilzstrg'
+           backendAzureRmContainerName: 'todocontainer'
+           backendAzureRmKey: 'dev.terraform.tfstate'
+       - task: TerraformTask@5
+         inputs:
+           provider: 'azurerm'
+           command: 'validate'
+           workingDirectory: '$(System.DefaultWorkingDirectory)/Environment/dev'
+           
+     - job: TerraformFmt
+       displayName: Terraform-fmt
+       steps:
+       - task: TerraformTask@5
+         inputs:
+           provider: 'azurerm'
+           command: 'custom'
+           workingDirectory: '$(System.DefaultWorkingDirectory)/Environment/dev'
+           outputTo: 'console'
+           customCommand: 'fmt'
+           environmentServiceNameAzureRM: 'saba-scn'
+
+-  stage: Linting
+   displayName: Linting & Scanning
+   dependsOn: PreCommit
+   jobs:
+   - job: tfsec
+     displayName: tFsec
+     steps:
+     - task: tfsec@1
+       inputs:
+         version: 'v1.26.0'
+         dir: '$(System.DefaultWorkingDirectory)/Environment/dev'
+
+   - job: tflint    
+     displayName: TFlint
+     dependsOn: tfsec
+     steps:
+     - task: PowerShell@2
+       continueOnError: true
+       inputs:
+         targetType: 'inline'
+         script: |
+           winget install TerraformLinters.tflint
+           ls
+           tflint
+         workingDirectory: '$(System.DefaultWorkingDirectory)/Environment/dev'
+         errorActionPreference: continue
+ 
+- stage: InfraCost
+  displayName: Infra-Cost
+  dependsOn: Linting
+  jobs:
+    - job: InfraCost
+      displayName: InfraCost
+      steps:
+      - task: PowerShell@2
+        inputs:
+          targetType: 'inline'
+          script: 'infracost breakdown --path=.'
+          workingDirectory: '$(System.DefaultWorkingDirectory)/Environment/dev'
+
+- stage: TerraformPlan
+  displayName: Terraform Plan
+  dependsOn: InfraCost
+  jobs:
+  - job: TerraformPlan
+    displayName: Terraform Plan
+    steps:
+    - task: TerraformTask@5
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/Environment/dev'
+        commandOptions: '-reconfigure'
+        backendServiceArm: 'saba-scn'
+        backendAzureRmStorageAccountName: 'todoilzstrg'
+        backendAzureRmContainerName: 'todocontainer'
+        backendAzureRmKey: 'dev.terraform.tfstate'
+    - task: TerraformTask@5
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: '$(System.DefaultWorkingDirectory)//Environment/dev'
+        environmentServiceNameAzureRM: 'saba-scn'
+
+- stage: ManualApproval
+  displayName: Manual Approval
+  dependsOn: TerraformPlan
+  jobs:
+    - job: ManualApproval
+      displayName: Manual Approval
+      pool: server
+      steps:
+      - task: ManualValidation@1
+        inputs:
+          notifyUsers: 'sabadevops1234@gmail.com'
+
+- stage: TerraformApply
+  displayName: Terraform Apply
+  dependsOn: ManualApproval
+  jobs:
+    - job: TerraformApply
+      displayName: Terraform Apply
+      pool: pool-ilz
+      steps:
+      - task: TerraformTask@5
+        inputs:
+          provider: 'azurerm'
+          command: 'init'
+          workingDirectory: '$(System.DefaultWorkingDirectory)/Environment/dev'
+          commandOptions: '-reconfigure'
+          backendServiceArm: 'saba-scn'
+          backendAzureRmStorageAccountName: 'todoilzstrg'
+          backendAzureRmContainerName: 'todocontainer'
+          backendAzureRmKey: 'dev.terraform.tfstate'
+      
+      - task: TerraformTask@5
+        inputs:
+          provider: 'azurerm'
+          command: 'apply'
+          workingDirectory: '$(System.DefaultWorkingDirectory)/Environment/dev'
+          commandOptions: '-auto-approve'
+          environmentServiceNameAzureRM: 'saba-scn'
+
