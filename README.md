@@ -6,10 +6,6 @@
 
 A **3-tier application deployed on Microsoft Azure**, designed with security, scalability, and private network connectivity in mind.
 
-## 🏗️ High-Level Architecture
-
-![High-Level Architecture](docs/high-level-architecture.png)
-
 ### Architecture
 
 The application is divided into three tiers:
